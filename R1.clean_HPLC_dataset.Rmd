@@ -1,0 +1,128 @@
+---
+title: "Clean datasets from Emilia in order to link redness index with HPLC astaxanthin content"
+author: "Laure Vilgrain"
+date: "January 2023"
+output:
+  html_document:
+    code_folding: hide
+    highlight: pygments
+    theme: yeti
+    toc: yes
+    toc_depth: 3
+    toc_float: yes
+  pdf_document:
+    toc: yes
+    toc_depth: '3'
+always_allow_html: yes
+---
+
+<style>
+body {
+text-align: justify}
+</style>
+
+
+```{r echo=TRUE, message=FALSE, warning=FALSE}
+library("tidyverse")
+library("patchwork")
+library("viridis")
+```
+
+# 0. Read data
+
+2018 : 
+```{r message=FALSE, warning=FALSE, include=FALSE}
+samples_2018_raw <- read_delim("data_emilia/ecoplast_samples_2018.csv", 
+    delim = ";", escape_double = FALSE, locale = locale(decimal_mark = ",", 
+        grouping_mark = ""), trim_ws = TRUE)
+details_2018_raw <- read_delim("data_emilia/ecoplast_details_2018.csv", 
+    delim = ";", escape_double = FALSE, locale = locale(decimal_mark = ","), trim_ws = TRUE)
+```
+
+
+2019 :
+```{r message=FALSE, warning=FALSE, include=FALSE}
+samples_2019_raw <- read_delim("data_emilia/ecoplast_samples_2019.csv", 
+    delim = ";", escape_double = FALSE, locale = locale(decimal_mark = ",", 
+        grouping_mark = ""), trim_ws = TRUE)
+details_2019_raw <- read_delim("data_emilia/ecoplast_details_2019.csv", 
+    delim = ";", escape_double = FALSE, locale = locale(decimal_mark = ","), 
+    trim_ws = TRUE)
+```
+
+
+# 1. Clean dataset from 2018
+
+```{r}
+details_2018 <- details_2018_raw %>% 
+  filter(analysis == "astaxa") %>% 
+  select(year, station, sample, ind =individual, stage, length) %>% 
+  mutate(image_name = str_c(year, station, sample, ind, sep = "_")) %>% 
+  mutate(image_name = str_c(image_name, ".tif"), sample_name = str_c(station, sample, sep ="_")) %>% 
+  select(image_name, sample_name, year, station, sample, stage, ind, length)
+
+samples_2018 <- samples_2018_raw %>% 
+  separate(col = "sample", into = c("sample", "station")) %>% 
+  #select(year, station, sample, tube_nb, calanus_type, mass_mg, asta_ng_mg) %>% 
+  mutate(sample = str_c("p", sample)) %>%
+  mutate(sample_name = str_c(station, sample, sep ="_")) %>% 
+  select(sample_name, year, station, sample, tube_nb, calanus_type, mass_mg, asta_ng_mg)
+
+setdiff(samples_2018$sample_name, details_2018$sample_name)
+# -> ok
+```
+
+
+# 2. Clean dataset from 2019 
+```{r}
+details_2019 <- details_2019_raw %>% 
+  filter(analysis == "Astaxa") %>% 
+  select(year, station, sample, calanus_type, ind = individual, length) %>% 
+  mutate(calanus_type = str_replace_na(calanus_type,"S")) %>% # There are some NA in this sample : logically, it was small (S) copepods, as it is written in the morpho aspects of samples_2019_raw, even if this S was not written in the original image name, on contrary to the "L" of other similar images. Because it's probably just an omission, we add this in the image name files, and here in the detailed dataset. 
+  mutate(image_name = str_c(year, station, calanus_type, sample, ind, sep = "_")) %>% 
+  mutate(image_name = str_c(image_name, ".tif"), sample_name = str_c(station, calanus_type, sample, sep ="_")) %>% 
+  select(image_name, sample_name, everything())
+
+samples_2019 <- samples_2019_raw %>% 
+  separate(col = "sample", into = c("station", "sample", "calanus_type")) %>%
+  mutate(sample_name = str_c(station, calanus_type, sample, sep ="_")) %>% 
+  select(sample_name, year, station, sample, tube_nb, calanus_type, mass_mg, asta_ng_mg)
+
+setdiff(samples_2019$sample_name, details_2019$sample_name)
+# -> in samples_2019_raw, I have changed K_S_A into K_S_A1 because it looks that it was a mistake, because it's A1 in the details dataset and in the image name. Now, there are no more difference in the samples names between the two datasets. 
+```
+
+The two samples dataset are ready to be merged. However, on column is different from details 2018 and 2019 > need to think how to solve that, or if we don"t need to merge the datasets from the 2 years. 
+
+
+# 3. Final datasets  
+
+```{r}
+# Details by image, redness index could be added
+img_details <-  bind_rows(details_2018, details_2019)
+
+# Samples details with astaxanthin quantified for 10 individuals
+asta_samples <- bind_rows(samples_2018, samples_2019)
+
+# Check names of images 
+img_names_list_local <- read_csv("data_emilia/img_names_list.csv")
+path = "~/complex/ecoplast_clean_dataset/"
+img_names_list_marie <- list.files(path)
+
+setdiff(img_details$image_name,img_names_list_local$x)
+# -> ok 
+setdiff(img_details$image_name,img_names_list_marie)
+# -> ok 
+
+# Write datasets
+write_csv(img_details, "data_emilia/img_details.csv")
+write_csv(asta_samples, "data_emilia/asta_samples.csv")
+```
+
+
+
+
+
+
+
+

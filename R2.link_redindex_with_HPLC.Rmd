@@ -1,0 +1,275 @@
+---
+title: "Link redness indices with HPLC astaxanthin content"
+author: "Laure Vilgrain"
+date: "January 2023"
+output:
+  html_document:
+    code_folding: hide
+    highlight: pygments
+    theme: yeti
+    toc: yes
+    toc_depth: 3
+    toc_float: yes
+  pdf_document:
+    toc: yes
+    toc_depth: '3'
+always_allow_html: yes
+---
+
+<style>
+body {
+text-align: justify}
+</style>
+
+
+```{r echo=TRUE, message=FALSE, warning=FALSE}
+library("tidyverse")
+library("patchwork")
+library("viridis")
+library("ggrepel")
+```
+
+
+
+# 0. Read datasets
+
+```{r message=FALSE}
+img_details <- read_csv("data_emilia/img_details.csv")
+asta_samples <- read_csv("data_emilia/asta_samples.csv")
+red_ind_final <- read_csv("data_emilia/red_ind_final.csv") %>% rename(image_name = img_name)
+```
+
+# 1. Merge with redness indices dataset (from python)
+```{r}
+img_details <- img_details %>% left_join(red_ind_final)
+red_index_by_sample <- img_details %>% 
+  group_by(sample_name) %>% 
+  summarise(sample_redness = mean(redness_index), sample_red_pixels = mean (red_pixels_nb)) %>% 
+  left_join(asta_samples, by = "sample_name") %>% 
+  mutate(asta_ng = asta_ng_mg*mass_mg)
+```
+ 
+
+# 2. Regressions 
+
+## 2.1. Average redness index vs total astaxanthin content per tube (ng)
+```{r}
+ggplot(red_index_by_sample)+
+  geom_point(aes(x = asta_ng, y = sample_redness, color = sample_name))+
+  geom_smooth(aes(x = asta_ng, y = sample_redness), method = "lm", color = "grey", se= F)+
+  labs(x= "Total astaxanthin content (10 individuals) (ng)", y ="Average of redness indices (10 images)")+
+  theme_bw()+ theme(legend.position = "none") +
+  scale_color_viridis_d()
+
+ggplot(red_index_by_sample)+
+  geom_point(aes(x = log(asta_ng), y = log(sample_redness), color = sample_name))+
+  geom_smooth(aes(x = log(asta_ng), y = log(sample_redness)), method = "lm", color = "grey", se= F)+
+  labs(x= "Total astaxanthin content (10 individuals) (ng)", y ="Average of redness indices (10 images)")+
+  theme_bw()+ theme(legend.position = "none") +
+  scale_color_viridis_d()
+
+```
+
+
+```{r}
+test1 <- lm(asta_ng ~ sample_redness, data = red_index_by_sample)
+summary(test1)
+
+test <- lm(log(asta_ng) ~ log(sample_redness), data = red_index_by_sample)
+summary(test)
+```
+*Significant <0.001, adjusted R-squared = 31%*
+</br></br>
+
+
+## 2.2. Average redness index vs astaxanthin content per copepod (ng/mgDW)
+```{r}
+ggplot(red_index_by_sample)+
+  geom_point(aes(x = asta_ng_mg, y = sample_redness, color = sample_name))+
+  geom_smooth(aes(x = asta_ng_mg, y = sample_redness), method = "lm", color = "grey", se= F)+
+  labs(x= "Total astaxanthin content (10 individuals) (ng)", y ="Average of redness indices (10 images)")+
+  theme_bw()+ theme(legend.position = "none")  +
+  scale_color_viridis_d()
+
+
+```
+
+```{r}
+test <- lm(asta_ng_mg ~ sample_redness, data = red_index_by_sample)
+summary(test)
+```
+*Significant <0.001, adjusted R-squared = 22%* > expected because here astaxanthin content is normalized by copepod weight, but as we took a sum of total astaxanthin content for 10 images, it has to be compared to the total per sample. We see group by samples, because copepods were typically assembled by size and astaxanthin content. 
+
+</br></br>
+
+
+## 2.3. Total number of red pixels vs total astaxanthin content (ng)
+
+```{r}
+ggplot(red_index_by_sample)+
+  geom_point(aes(x = asta_ng, y = sample_red_pixels, color = sample_name))+
+  geom_smooth(aes(x = asta_ng, y = sample_red_pixels), method = "lm", color = "grey", se= F)+
+  labs(x= "Total astaxanthin content (10 individuals) (ng)", y ="Average of red (10 images)")+
+  theme_bw()+ theme(legend.position = "none")  +
+  scale_color_viridis_d()
+
+```
+
+
+```{r}
+test <- lm(asta_ng ~ sample_red_pixels, data = red_index_by_sample)
+summary(test)
+```
+
+*Significant <0.001, adjusted R-squared = 28%* > not a big difference with quantitative index 
+</br></br>
+
+
+# 3. Check variability among images 
+
+So we will keep the first regression, and see variability among images. 
+
+```{r}
+# Dataset with HPLC quantification associated to each image (not summarise to sample level)
+red_index_by_image <- img_details %>% 
+  group_by(sample_name) %>% 
+  mutate(sample_redness = mean(redness_index), sample_red_pixels = mean(red_pixels_nb)) %>% 
+  left_join(select(asta_samples, sample_name,asta_ng_mg,mass_mg), by = "sample_name") %>% 
+  mutate(asta_ng = asta_ng_mg*mass_mg)
+
+```
+
+
+```{r}
+ggplot(red_index_by_image)+
+  geom_point(aes(x = asta_ng, y = redness_index), color = "grey50", alpha = 0.7, size = 0.5)+
+    geom_point(aes(x = asta_ng, y = sample_redness), color = "brown3", size = 1.5)+
+  geom_smooth(aes(x = asta_ng, y = sample_redness), method = "lm", color = "brown3", aplha = 0.7, se= F)+
+  labs(x= "Total astaxanthin content (10 individuals) (ng)", y ="Redness indices (averages for 10 images in red)")+
+  theme_bw()
+
+```
+
+
+We can see something like a saturation (which was proven for salmon redness, Ronsholdt & McLean 2001) : 
+
+```{r}
+ggplot(red_index_by_image)+
+  geom_point(aes(x = asta_ng, y = redness_index), color = "grey50", alpha = 0.7, size = 0.5)+
+  geom_point(aes(x = asta_ng, y = sample_redness), color = "brown3", size = 1.5)+
+  geom_smooth(aes(x = asta_ng, y = sample_redness), color = "brown3", aplha = 0.7, se= F)+
+  labs(x= "Total astaxanthin content (10 individuals) (ng)", y ="Redness indices (averages for 10 images in red)")+
+  theme_bw()
+
+```
+Is this saturation because of 
+- a "real" trend ? 
+- HPLC methods variability at medium concentrations ? 
+- uncertainties in the redness index method (threshold not optimal) ?
+- because of outliers ? 
+
+# 4. Look deeper 
+
+## 4.1 Check outliers 
+
+```{r}
+# Define outliers
+expected_outliers_high <- red_index_by_image %>% filter(redness_index > 500)
+expected_outliers_low <- red_index_by_image %>% filter(redness_index < 175 & asta_ng >15)
+```
+
+
+
+```{r}
+ggplot(red_index_by_image)+
+  geom_point(aes(x = asta_ng, y = redness_index), color = "grey50", alpha = 0.7, size = 0.5)+
+  geom_point(aes(x = asta_ng, y = redness_index), color = "blue", alpha = 0.7, size = 1, data = expected_outliers_high)+
+  geom_text_repel(aes(x = asta_ng, y = redness_index, label = image_name), color = "blue", data = expected_outliers_high, size =2.5, max.overlaps = 15)+
+  geom_point(aes(x = asta_ng, y = redness_index), color = "orange", alpha = 0.7, size = 1, data = expected_outliers_low)+
+  geom_text_repel(aes(x = asta_ng, y = redness_index, label = image_name), color = "orange", data = expected_outliers_low, size =2.5, max.overlaps =30 )+
+  geom_point(aes(x = asta_ng, y = sample_redness), color = "grey40", size = 1.5)+
+  geom_smooth(aes(x = asta_ng, y = sample_redness), color = "grey50", aplha = 0.7, se= F)+
+  labs(x= "Total astaxanthin content (10 individuals) (ng)", y ="Redness indices (averages for 10 images in red)")+
+  theme_bw(base_size=15)
+ggsave("results/index_outliers.png", width=12, height =10)
+```
+We will look at images assocatied with these outliers, but we can first see a clear influence of the year (only 2019 at the top and mostlu 2018 at the bottom, especialy for medium astaxanthin content).
+
+```{r include=FALSE}
+# Put images in a file to check them afterwards
+# High
+expected_outliers_high$path_in_calib = str_c("~/complex/ecoplast_clean_dataset/2.Calibrated/",expected_outliers_high$image_name)
+expected_outliers_high$path_out_calib = str_c("~/complex/ecoplast_clean_dataset/results/outliers_high/",expected_outliers_high$image_name, "_calib.tif")
+file.copy(from = expected_outliers_high$path_in_calib, to = expected_outliers_high$path_out_calib)
+
+expected_outliers_high$path_in_index = str_c("~/complex/ecoplast_clean_dataset/3.Red_pixels_masked/",expected_outliers_high$image_name)
+expected_outliers_high$path_out_index = str_c("~/complex/ecoplast_clean_dataset/results/outliers_high/",expected_outliers_high$image_name, "_index.tif")
+file.copy(from = expected_outliers_high$path_in_index, to = expected_outliers_high$path_out_index)
+
+# Low
+expected_outliers_low$path_in_calib = str_c("~/complex/ecoplast_clean_dataset/2.Calibrated/",expected_outliers_low$image_name)
+expected_outliers_low$path_out_calib = str_c("~/complex/ecoplast_clean_dataset/results/outliers_low/",expected_outliers_low$image_name, "_calib.tif")
+file.copy(from = expected_outliers_low$path_in_calib, to = expected_outliers_low$path_out_calib)
+
+expected_outliers_low$path_in_index = str_c("~/complex/ecoplast_clean_dataset/3.Red_pixels_masked/",expected_outliers_low$image_name)
+expected_outliers_low$path_out_index = str_c("~/complex/ecoplast_clean_dataset/results/outliers_low/",expected_outliers_low$image_name, "_index.tif")
+file.copy(from = expected_outliers_low$path_in_index, to = expected_outliers_low$path_out_index)
+
+```
+
+
+## 4.2 Look at the effect of the year 
+
+```{r}
+red_index_by_image %>% 
+  ggplot()+
+  facet_wrap(~ year)+
+  geom_point(aes(x = asta_ng, y = redness_index), color = "grey50", alpha = 0.7, size = 0.5)+
+  geom_point(aes(x = asta_ng, y = sample_redness), color = "brown3", size = 1.5)+
+  geom_smooth(aes(x = asta_ng, y = sample_redness), color = "brown3", aplha = 0.7, se= F)+
+  labs(x= "Total astaxanthin content (10 individuals) (ng)", y ="Redness indices (averages for 10 images in red)")+
+  theme_bw()
+
+```
+
+Focus on 2018 : 
+```{r}
+samp2018 <- red_index_by_image %>% 
+  filter(year== 2018) %>% 
+  group_by(sample_name) %>% 
+  summarise(sample_redness = mean(sample_redness), asta_ng = mean(asta_ng))
+
+red_index_by_image %>% 
+  filter(year == 2018) %>% 
+  ggplot()+
+  geom_point(aes(x = asta_ng, y = redness_index), color = "grey50", alpha = 0.7, size = 0.5)+
+  geom_point(aes(x = asta_ng, y = sample_redness), color = "brown3", size = 1.5)+
+  geom_text_repel(aes(x = asta_ng, y = sample_redness, label = sample_name), color = "brown3", size = 2, max.overlaps =30, data = samp2018)+
+  geom_smooth(aes(x = asta_ng, y = sample_redness), color = "brown3", aplha = 0.7, se= F)+
+  labs(x= "Total astaxanthin content (10 individuals) (ng)", y ="Redness indices (averages for 10 images in red)")+
+  theme_bw()
+
+ggsave("results/samples_names_2018.png", width=8, height =8)
+```
+
+Focus on 2019 : 
+```{r}
+samp2019 <- red_index_by_image %>% 
+  filter(year== 2019) %>% 
+  group_by(sample_name) %>% 
+  summarise(sample_redness = mean(sample_redness), asta_ng = mean(asta_ng))
+
+red_index_by_image %>% 
+  filter(year == 2019) %>% 
+  ggplot()+
+  geom_point(aes(x = asta_ng, y = redness_index), color = "grey50", alpha = 0.7, size = 0.5)+
+  geom_point(aes(x = asta_ng, y = sample_redness), color = "brown3", size = 1.5)+
+  geom_text_repel(aes(x = asta_ng, y = sample_redness, label = sample_name), color = "brown3", size = 2, max.overlaps =30, data = samp2019)+
+  geom_smooth(aes(x = asta_ng, y = sample_redness), color = "brown3", aplha = 0.7, se= F)+
+  labs(x= "Total astaxanthin content (10 individuals) (ng)", y ="Redness indices (averages for 10 images in red)")+
+  theme_bw()
+
+ggsave("results/samples_names_2019.png", width=8, height =8)
+```
+
+

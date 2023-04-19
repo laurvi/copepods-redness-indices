@@ -1,0 +1,603 @@
+---
+title: "Graphics with selected images"
+author: "Laure Vilgrain"
+date: "January 2023"
+output:
+  html_document:
+    code_folding: hide
+    highlight: pygments
+    theme: yeti
+    toc: yes
+    toc_depth: 3
+    toc_float: yes
+  pdf_document:
+    toc: yes
+    toc_depth: '3'
+always_allow_html: yes
+---
+
+<style>
+body {
+text-align: justify}
+</style>
+
+
+```{r echo=TRUE, message=FALSE, warning=FALSE}
+library("tidyverse")
+library("patchwork")
+library("viridis")
+library("ggrepel")
+library("DT")
+```
+
+
+
+# 0. Read datasets
+
+```{r message=FALSE}
+img_details <- read_csv("data_emilia/img_details.csv", show_col_types = FALSE)
+asta_samples <- read_csv("data_emilia/asta_samples.csv", show_col_types = FALSE)
+red_ind_final <- read_csv("data_emilia/red_ind_final.csv", show_col_types = FALSE) %>% rename(image_name = img_name)
+img_details <- img_details %>% left_join(red_ind_final)
+```
+
+Dataset for all images (699 images) :
+```{r}
+red_index_by_image <- img_details %>% 
+  group_by(sample_name) %>% 
+  mutate(sample_redness = mean(redness_index), sample_red_pixels = mean(red_pixels_nb)) %>% 
+  left_join(select(asta_samples, sample_name,asta_ng_mg,mass_mg), by = "sample_name") %>% 
+  mutate(asta_ng = (asta_ng_mg*mass_mg)/10)
+
+datatable(red_index_by_image, rownames = FALSE, filter="top", options = list(pageLength = 5, scrollX=T))
+
+```
+
+Sample level (70 samples) :
+```{r}
+red_index_by_sample <- img_details %>% 
+  group_by(sample_name) %>% 
+  summarise(sample_redness = mean(redness_index), sample_red_pixels = mean (red_pixels_nb)) %>% 
+  left_join(asta_samples, by = "sample_name") %>% 
+  mutate(asta_ng = (asta_ng_mg*mass_mg)/10)
+datatable(red_index_by_sample, rownames = FALSE, filter="top", options = list(pageLength = 5, scrollX=T))
+```
+
+<br/>
+
+# 1. Path to images and images selection 
+Add path to images in the detailed dataset : 
+```{r}
+# Paths in
+red_index_by_image$path_in_original = str_c("~/complex/ecoplast_clean_dataset/1.Original/",red_index_by_image$image_name)
+red_index_by_image$path_in_calib = str_c("~/complex/ecoplast_clean_dataset/2.Calibrated/",red_index_by_image$image_name)
+red_index_by_image$path_in_index = str_c("~/complex/ecoplast_clean_dataset/4.Red_pixels_highlighted/",red_index_by_image$image_name)
+red_index_by_image$path_in_mask = str_c("~/complex/ecoplast_clean_dataset/3.Red_pixels_masked/",red_index_by_image$image_name)
+
+# Paths out
+red_index_by_image$path_out_original = str_c("~/complex/ecoplast_clean_dataset/results/sample_to_show/",red_index_by_image$image_name, "original.tif")
+red_index_by_image$path_out_calib = str_c("~/complex/ecoplast_clean_dataset/results/sample_to_show/",red_index_by_image$image_name, "calib.tif")
+red_index_by_image$path_out_index = str_c("~/complex/ecoplast_clean_dataset/results/sample_to_show/",red_index_by_image$image_name, "index.tif")
+red_index_by_image$path_out_mask = str_c("~/complex/ecoplast_clean_dataset/results/sample_to_show/",red_index_by_image$image_name, "mask.tif")
+```
+
+We want to select ten images of Figure 3.1, including three images with a known redness gradient for Fig. 3.3. The seven others are chosen randomly. </br>
+
+```{r}
+selection3 <- red_index_by_image %>% filter(image_name %in% c("2018_G_p85_5.tif", "2018_AR_p22_4.tif", "2018_AR_p21_5.tif"))
+#sample7 <- sample(x = 1:699, size = 7)
+#sample7_to_show <- red_index_by_image[sample7,]
+#write_csv(sample7_to_show, "data_emilia/sample7_to_show.csv")
+sample7_to_show <- read_csv("data_emilia/sample7_to_show.csv", show_col_types = FALSE)
+sample7_to_show$asta_ng <- sample7_to_show$asta_ng/10
+sample7_to_show$path_in_original = str_c("~/complex/ecoplast_clean_dataset/1.Original/",sample7_to_show$image_name)
+sample7_to_show$path_out_original = str_c("~/complex/ecoplast_clean_dataset/results/sample_to_show/",sample7_to_show$image_name, "original.tif")
+# setdiff(sample7_to_show$image_name, selection3$image_name)
+# -> ok they are all different
+
+```
+
+
+</br>
+Representation of selected images on the relationship with raw data.  
+```{r, fig.width=7, fig.height=4}
+ggplot(red_index_by_image)+
+  # all images
+  geom_point(aes(x = asta_ng, y = redness_index), color = "grey50", alpha = 0.7, size = 0.5)+
+  # averages and smooth
+  geom_point(aes(x = asta_ng, y = sample_redness), color = "#01665e", size = 1.5)+
+  geom_smooth(aes(x = asta_ng, y = sample_redness), color = "#01665e", linewidth = 0.5, se= F)+
+  # selected 3 images
+  geom_point(aes(x = asta_ng, y = redness_index), color = "#d94801", alpha = 0.7, size = 1, data = selection3)+
+  geom_text_repel(aes(x = asta_ng, y = redness_index, label = image_name), color = "#d94801", data = selection3, size =3, max.overlaps = 15)+
+  # random sample of seven images
+  geom_point(aes(x = asta_ng, y = redness_index), color = "#d94801", alpha = 0.7, size = 1, data = sample7_to_show)+
+  geom_text_repel(aes(x = asta_ng, y = redness_index, label = image_name), color = "#d94801", data = sample7_to_show, size =3, max.overlaps = 15)+
+  labs(x= "Average astaxanthin content by individual (ng)", y ="Redness indices (averages for 10 images in red)")+
+  theme_bw(base_size=10)
+```
+
+
+</br>
+Final sample of 10 images associated with the image name on Figure 3.1. 
+```{r message=FALSE}
+sample7_to_show <- mutate(sample7_to_show, graphid = "sample7")
+selection3 <- mutate(selection3, graphid = "selection3")
+sample_to_show <- bind_rows(sample7_to_show, selection3)
+
+image_letters <- read_delim("data_emilia/image_letters.csv", 
+    delim = ";", escape_double = FALSE, trim_ws = TRUE, show_col_types = FALSE)
+
+sample_to_show  <- sample_to_show  %>% left_join(image_letters ) %>%  select(image_name, image_letter, everything())
+datatable(sample_to_show, rownames = FALSE, filter="top", options = list(pageLength = 3, scrollX=T))
+```
+
+
+```{r eval=FALSE, include=FALSE}
+# Copy the 10 images in a file
+file.copy(from = sample_to_show$path_in_original, to = sample_to_show$path_out_original)
+file.copy(from = sample_to_show$path_in_calib, to = sample_to_show$path_out_calib)
+file.copy(from = sample_to_show$path_in_index, to = sample_to_show$path_out_index)
+file.copy(from = sample_to_show$path_in_mask, to = sample_to_show$path_out_mask)
+
+```
+
+</br></br>
+
+# 2. Tests on data transformations and representation : 
+
+Log (ln) transformation and initial (intuitive) representation of RI = f(TAC) : 
+```{r, fig.width=15, fig.height=5}
+a <- ggplot(red_index_by_image)+
+  # all images
+  geom_point(aes(y = asta_ng,x = redness_index), color = "grey60", alpha = 0.7, size = 1)+
+  # averages and smooth
+  geom_point(aes(y = asta_ng, x = sample_redness), color = "#01665e", size = 2)+
+  #geom_smooth(aes(x = asta_ng, y = sample_redness_log), color = "grey50", size = 0.5, se= F)+
+  geom_smooth(aes(y = asta_ng, x = sample_redness), method = "lm", formula = 'y ~ x',color = "#01665e", linewidth = 0.5, se= F)+
+  # print selected image
+  geom_point(aes(y = asta_ng, x = redness_index), color = "#d94801", size = 1.5, data = sample_to_show)+
+  geom_text_repel(aes(y = asta_ng, x = redness_index, label = image_letter), color = "#d94801", data = sample_to_show, size =4, max.overlaps = 15)+
+  labs(y= "Total astaxanthin content (TAC) (ng) (log axis)", x ="Redness indices (log axis)")+
+  theme_bw(base_size=12) + 
+  scale_y_continuous(trans = "log")+ 
+  scale_x_continuous(trans = "log")
+
+
+b <- ggplot(red_index_by_image)+
+  # all images
+  geom_point(aes(x = asta_ng, y = redness_index), color = "grey60", alpha = 0.7, size = 1)+
+  # averages and smooth
+  geom_point(aes(x = asta_ng, y = sample_redness), color = "#01665e", size = 2)+
+  #geom_smooth(aes(x = asta_ng, y = sample_redness_log), color = "grey50", size = 0.5, se= F)+
+  geom_smooth(aes(x = asta_ng, y = sample_redness), method = "lm", formula = 'y ~ x',color = "#01665e", linewidth = 0.5, se= F)+
+  # print selected image
+  geom_point(aes(x = asta_ng, y = redness_index), color = "#d94801", size = 1.5, data = sample_to_show)+
+  geom_text_repel(aes(x = asta_ng, y = redness_index, label = image_letter), color = "#d94801", data = sample_to_show, size =4, max.overlaps = 15)+
+  labs(x= "Total astaxanthin content (TAC) (ng) (log axis)", y ="Redness indices (log axis)")+
+  theme_bw(base_size=12) + 
+  scale_y_continuous(trans = "log")+ 
+  scale_x_continuous(trans = "log")
+
+a + b
+
+```
+
+
+<style>
+div.blue { background-color:#e6f0ff; border-radius: 5px; padding: 20px;}
+</style>
+<div class = "blue">
+
+Large improvement with log-log represention. 
+</div>
+
+
+### Test to check results of various regression types: 
+
+**1) Linear model without log** </br> 
+
+a) TAC = f(RI)   </br> 
+-> pvalue < 0.001,  Adjusted R squared = 35%
+```{r}
+summary(lm(asta_ng ~ sample_redness, data = red_index_by_sample))
+# 35%
+```
+
+b) RI = f(TAC) </br> 
+-> pvalue < 0.001,  same Adjusted R squared = 35%
+```{r}
+summary(lm(sample_redness ~ asta_ng, data = red_index_by_sample))
+# 35%
+```
+</br> </br> 
+
+
+**2) Linear model with log** </br> 
+
+a)  ln(TAC) = f(ln(RI)) </br> 
+-> p-value < 0.001, **Adjusted R-squared = 0.599**, slope (b) = 0.83, intercept (ln(a)) = -1.82 so a = 0.1620258
+```{r, fig.width=10, fig.height=7.5}
+# Log(ln) transformation 
+summary(lm(log(asta_ng) ~ log(sample_redness), data = red_index_by_sample))
+# 60%
+lm_TAC_RI <- lm(log(asta_ng) ~ log(sample_redness), data = red_index_by_sample)
+opar <- par(mfrow = c(2,2), oma = c(0, 0, 1.1, 0))
+plot(lm_TAC_RI , las = 1)      # Residuals, Fitted, ...
+par(opar)
+```
+```{r}
+library(gvlma)
+gvlma(lm_TAC_RI)
+```
+
+
+
+b) ln(RI) = f(ln(TAC)) </br>
+-> p-value < 0.001, **Adjusted R-squared = 0.599**, slope (b) = 0.73, intercept (ln(a)) = 3.20, so a = 24.53253
+```{r, fig.width=10, fig.height=7.5}
+summary(lm(log(sample_redness) ~ log(asta_ng), data = red_index_by_sample))
+lm_RI_TAC <- lm(log(sample_redness) ~ log(asta_ng), data = red_index_by_sample)
+opar <- par(mfrow = c(2,2), oma = c(0, 0, 1.1, 0))
+plot(lm_RI_TAC , las = 1)      # Residuals, Fitted, ...
+par(opar)
+```
+
+
+**3) Linear model with log on all images** </br> 
+
+a)  ln(TAC) = f(ln(RIimages)) </br> 
+-> p-value < 0.001, **Adjusted R-squared = 0.4558**, slope (b) = 0.59, intercept (ln(a)) = -0.62 </br> 
+-> more variability, R2 less important 
+```{r}
+# Ln transformation + with all images and no averages
+summary(lm(log(asta_ng) ~ log(redness_index), data = red_index_by_image))
+# 46% -> more variability 
+```
+
+
+**4) Linear model with number of red pixels instead of RI**
+ln(TAC) = f(ln(red_pix)) </br> 
+-> p-value < 0.001, **Adjusted R-squared = 0.5821**, slope (b) = 0.94, intercept (ln(a)) = -1.17 </br> 
+Linear model test : 
+```{r}
+red_pix_sample <-
+  red_index_by_image %>%
+  group_by(sample_name) %>% 
+  summarise(asta_ng = mean(asta_ng), red_pixels_nb = mean(red_pixels_nb))
+
+summary(lm(log(asta_ng) ~ log(red_pixels_nb), data = red_pix_sample))
+```
+
+</br> 
+
+<style>
+div.blue { background-color:#e6f0ff; border-radius: 5px; padding: 20px;}
+</style>
+<div class = "blue">
+
+- The best models are indeed the **log-log relationship between redness indices at the sample level and HPLC quantification**. The use of redness indices instead of redness pixels numbers doens not improve the relationship much (1.7%), but better than nothing. </br> 
+- **Diagnostic graphs are not perfect but quite good**: residuals looks normal, leverage is correct (not too close to cook's distance). I found them a little bit better for RI = f(TAC) </br> 
+- The **sense of the relationship does not affect the R-squared, but affects the slope** and produce different outliers in each case. I found difficult to choose one representation over another : TAC=f(RI) is better to find the astaxanthin content. Also, we said that the error of HPLC might be larger than the one from imaging analysis. But in fact, because the dataset is constructed with 1 HPLC point for 10 redness indices, the variation is only visible (and large) for RI. Thus, it might be coherent to represent RI= f(TAC). In Vogedes et al (2010), they did not have the same issue because they had 1 lipid quantification for 1 image. **I still don't know what representation to choose: what do you think ? Is it interesting to put both ?.**
+
+</div>
+
+</br> </br> 
+
+### Density distribution of orginal data (log transformed): 
+Want to check distribution of original data. 
+```{r, fig.width=11, fig.height=3}
+# Image redness indices
+a <- ggplot(red_index_by_image)+
+  geom_density(aes(x = log(redness_index)), color = "black")+
+  labs(title="Image redness indices")
+
+# Sample redness indices
+b <- ggplot(red_index_by_image)+
+  geom_density(aes(x = log(sample_redness)), color = "black")+
+  labs(title="Sample redness indices")
+
+# HPLC astaxanthin
+c <- ggplot(red_index_by_image)+
+  geom_density(aes(x = log(asta_ng)), color = "black")+
+  labs(title="HPLC (ng)")
+
+a + b + c
+
+```
+
+<style>
+div.blue { background-color:#e6f0ff; border-radius: 5px; padding: 20px;}
+</style>
+<div class = "blue">
+
+**Distribution is clearly not normal, but bi-modal**. We can suppose an influence of the year, and/or a "real" bi-modal distribution of red vs not red copepods (between C.finmarchicus and C.glacialis, or between two water masses for example?).
+</div>
+
+</br> 
+Summary redness index for all images : 
+
+```{r}
+summary(red_index_by_image$redness_index)
+```
+</br> </br> 
+
+Summary redness for samples : 
+```{r}
+summary(red_index_by_image$sample_redness)
+```
+</br> </br> 
+
+Summary HPLC for samples : 
+```{r}
+summary(red_index_by_image$asta_ng)
+```
+
+</br> 
+
+# 3. Influence of the year 
+
+Add year as the shape of points on the graph.
+```{r, fig.width=15, fig.height=5}
+a <- ggplot(red_index_by_image)+
+  # all images
+  geom_point(aes(x = asta_ng, y = redness_index, shape = factor(year)), color = "grey60", alpha = 0.7, size = 1)+
+  # averages and smooth
+  geom_point(aes(x = asta_ng, y = sample_redness, shape = factor(year)), color = "#01665e", size = 2)+
+  #geom_smooth(aes(x = asta_ng, y = sample_redness_log), color = "grey50", size = 0.5, se= F)+
+  geom_smooth(aes(x = asta_ng, y = sample_redness), method = "lm", color = "#01665e", formula = 'y ~ x',linewidth = 0.5, se= F)+
+  # print selected image
+  geom_point(aes(x = asta_ng, y = redness_index, shape = factor(year)), color = "#d94801", size = 1.5, data = sample_to_show)+
+  geom_text_repel(aes(x = asta_ng, y = redness_index, label = image_letter), color = "#d94801", data = sample_to_show, size = 4, max.overlaps = 15)+
+  labs(x= "Total astaxanthin content (TAC) (ng) (log axis)", y ="Redness indices (log axis)")+
+  theme_bw(base_size=12) + theme(legend.position = "none") +
+  scale_y_continuous(trans = "log")+ 
+  scale_x_continuous(trans = "log")
+
+b <- ggplot(red_index_by_image)+
+  # all images
+  geom_point(aes(y = asta_ng,x = redness_index, shape = factor(year)), color = "grey60", alpha = 0.7, size = 1)+
+  # averages and smooth
+  geom_point(aes(y = asta_ng, x = sample_redness, shape = factor(year)), color = "#01665e", size = 2)+
+  #geom_smooth(aes(x = asta_ng, y = sample_redness_log), color = "grey50", size = 0.5, se= F)+
+  geom_smooth(aes(y = asta_ng, x = sample_redness), method = "lm", color = "#01665e", formula = 'y ~ x',linewidth = 0.5, se= F)+
+  # print selected image
+  geom_point(aes(y = asta_ng, x = redness_index, shape = factor(year)), color = "#d94801", size = 1.5, data = sample_to_show)+
+  geom_text_repel(aes(y = asta_ng, x = redness_index, label = image_letter), color = "#d94801", data = sample_to_show, size =4, max.overlaps = 15)+
+  labs(y= "Total astaxanthin content (TAC) (ng) (log axis)", x ="Redness indices (log axis)", shape = "Year")+
+  theme_bw(base_size=12) + 
+  scale_y_continuous(trans = "log")+ 
+  scale_x_continuous(trans = "log")
+
+a + b
+```
+```{r}
+
+ggplot(filter(red_index_by_image, !(stage %in% c("CVIF"))))+
+  # all images
+  geom_point(aes(y = asta_ng,x = redness_index,shape = factor(year)), color = "grey60", alpha = 0.7, size = 1)+
+  # averages and smooth
+  geom_point(aes(y = asta_ng, x = sample_redness,shape = factor(year)), color = "#01665e", size = 2)+
+  #geom_smooth(aes(x = asta_ng, y = sample_redness_log), color = "grey50", size = 0.5, se= F)+
+  geom_smooth(aes(y = asta_ng, x = sample_redness), method = "lm", formula = 'y ~ x',color = "#01665e", linewidth = 0.5, se= F)+
+  # print selected image
+  geom_point(aes(y = asta_ng, x = redness_index,shape = factor(year)), color = "#d94801", size = 1.5, data = sample_to_show)+
+  geom_text_repel(aes(y = asta_ng, x = redness_index, label = image_letter), color = "#d94801", data = sample_to_show, size =6, max.overlaps = 15)+
+  labs(y= "Individual astaxanthin content (ng, log axis)", x ="Redness index (um2, log axis)", shape ="Year")+
+  theme_bw(base_size=14)+
+  scale_y_continuous(trans = "log", labels = scales::number_format(accuracy = 0.01), limits =c(min(red_index_by_image$asta_ng), 5))+ 
+  scale_x_continuous(trans = "log", labels = scales::number_format(accuracy = 0.01), limits =c(min(red_index_by_image$redness_index), 1100))
+
+#ggsave("figures/HPLC_redness_log.pdf", width=9, height =5)
+
+ggplot(red_index_by_image)+
+  # all images
+  geom_point(aes(y = asta_ng,x = redness_index,shape = factor(year)), color = "grey60", alpha = 0.7, size = 1)+
+  # averages and smooth
+  geom_point(aes(y = asta_ng, x = sample_redness,shape = factor(year)), color = "#01665e", size = 2)+
+  #geom_smooth(aes(x = asta_ng, y = sample_redness_log), color = "grey50", size = 0.5, se= F)+
+  geom_smooth(aes(y = asta_ng, x = sample_redness), method = "lm", formula = 'y ~ x',color = "#01665e", linewidth = 0.5, se= F)+
+  # print selected image
+  geom_point(aes(y = asta_ng, x = redness_index,shape = factor(year)), color = "#d94801", size = 1.5, data = sample_to_show)+
+  geom_text_repel(aes(y = asta_ng, x = redness_index, label = image_letter), color = "#d94801", data = sample_to_show, size =6, max.overlaps = 15)+
+  labs(y= "Individual astaxanthin content (ng, log axis)", x ="Redness index (um2, log axis)", shape ="Year")+
+  theme_bw(base_size=14)+
+  scale_y_continuous(trans = "log", labels = scales::number_format(accuracy = 0.01), limits =c(min(red_index_by_image$asta_ng), 5))+ 
+  scale_x_continuous(trans = "log", labels = scales::number_format(accuracy = 0.01), limits =c(min(red_index_by_image$redness_index), 1100))
+
+
+```
+
+We can see that points are often, but not systemically, grouped by year. 
+</br></br>
+
+### Density distribution of orginal data (log transformed) by YEAR
+
+```{r, fig.width=12, fig.height=5}
+# Image redness indices
+a <- ggplot()+
+  geom_density(aes(x = log(redness_index)), color = "black", data = red_index_by_image, size = 1.5)+
+  geom_density(aes(x = log(redness_index)), data = filter(red_index_by_image, year == 2018), color = "violetred")+
+  geom_density(aes(x = log(redness_index)), data = filter(red_index_by_image, year == 2019), color = "yellowgreen")+
+  labs(title="Image redness indices")
+
+# Sample redness indices
+b <- ggplot(red_index_by_image)+
+  geom_density(aes(x = log(sample_redness)),color = "black", data = red_index_by_image, size = 1.5)+
+  geom_density(aes(x = log(sample_redness)), data = filter(red_index_by_image, year == 2018), color = "violetred")+
+  geom_density(aes(x = log(sample_redness)), data = filter(red_index_by_image, year == 2019), color = "yellowgreen")+
+  labs(title="Sample redness indices")
+
+# HPLC astaxanthin
+c <- ggplot(red_index_by_image)+
+  geom_density(aes(x = log(asta_ng)), color = "black", data = red_index_by_image, size = 1.5)+
+  geom_density(aes(x = log(asta_ng)), data = filter(red_index_by_image, year == 2018), color = "violetred")+
+  geom_density(aes(x = log(asta_ng)), data = filter(red_index_by_image, year == 2019), color = "yellowgreen")+
+  labs(title="HPLC (ng)")
+
+a + b + c
+
+```
+Black = both years, Green = 2019, Purple = 2018
+
+<style>
+div.blue { background-color:#e6f0ff; border-radius: 5px; padding: 20px;}
+</style>
+<div class = "blue">
+
+Obvious bi-modal distribution influenced by the year (copepods less red in 2018), coherent between HPLC and imaging methods. We can also see a small bi-modal distribution within year 2018. **Is it a problem ? I think not if residuals are normal, which is the case (see next paragraph).**
+</div>
+
+</br></br>
+
+### Density distribution of residuals with the two best models
+
+```{r, fig.width=5, fig.height=2, fig.align='center'}
+a <- ggplot()+
+  geom_density(aes(x = lm_RI_TAC$residuals), color = "darkblue")
+shapiro.test(lm_RI_TAC$residuals)
+
+b <- ggplot()+
+  geom_density(aes(x = lm_TAC_RI$residuals), color = "darkblue")
+shapiro.test(lm_TAC_RI$residuals)
+a+b
+```
+
+<style>
+div.blue { background-color:#e6f0ff; border-radius: 5px; padding: 20px;}
+</style>
+<div class = "blue">
+
+**Residuals are normally distributed** in both senses of the relationship. 
+</div>
+</br></br>
+
+
+# 5. Do we have to remove outliers ? 
+</br>
+I gathered two types of outliers in the models : </br>
+- maximum leverage = max Cook distance : *green* </br>
+- maximum residuals (based on diagnostic graphs) : *blue* </br>
+
+```{r}
+leverage <- data.frame(lev_TAC_RI = hatvalues(lm_TAC_RI), lev_RI_TAC = hatvalues(lm_RI_TAC))
+red_index_by_sample <- bind_cols(red_index_by_sample, leverage)
+```
+</br></br>
+
+
+### For ln(TAC) = f(ln(RI))
+
+```{r, fig.width=8, fig.height=5}
+outliers_lev_TAC_RI <- red_index_by_sample %>% filter(lev_TAC_RI > 0.04)
+outliers_res_TAC_RI <- red_index_by_sample %>% filter(rownames(red_index_by_sample) %in% c("16", "20", "41"))
+
+ggplot(red_index_by_image)+
+  # all images
+  geom_point(aes(y = asta_ng,x = redness_index, shape = factor(year)), color = "grey60", alpha = 0.7, size = 1)+
+  # averages and smooth
+  geom_point(aes(y = asta_ng, x = sample_redness, shape = factor(year)), color = "#01665e", size = 2)+
+  #geom_smooth(aes(x = asta_ng, y = sample_redness_log), color = "grey50", size = 0.5, se= F)+
+  geom_smooth(aes(y = asta_ng, x = sample_redness), method = "lm", color = "#01665e", formula = 'y ~ x',size = 0.5, se= F)+
+  # print selected image
+  geom_point(aes(y = asta_ng, x = redness_index, shape = factor(year)), color = "#d94801", size = 1.5, data = sample_to_show)+
+  geom_text_repel(aes(y = asta_ng, x = redness_index, label = image_letter), color = "#d94801", data = sample_to_show, size =6, max.overlaps = 15)+
+  # outliers 
+  geom_point(aes(y = asta_ng, x = sample_redness), shape = "x", color = "green", size = 4, data = outliers_lev_TAC_RI)+
+  geom_point(aes(y = asta_ng, x = sample_redness), shape = "x", color = "blue", size = 4, data = outliers_res_TAC_RI)+
+  #labs etc
+  labs(y= "Total astaxanthin content (TAC) (ng) (log axis)", x ="Redness indices (log axis)")+
+  theme_bw(base_size=10) + 
+  scale_y_continuous(trans = "log")+ 
+  scale_x_continuous(trans = "log")
+```
+
+
+### For ln(RI) = f(ln(TAC)) 
+
+```{r, fig.width=8, fig.height=5}
+outliers_lev_RI_TAC <- red_index_by_sample %>% filter(lev_RI_TAC > 0.045)
+outliers_res_RI_TAC <- red_index_by_sample %>% filter(rownames(red_index_by_sample) %in% c("16", "20", "21"))
+
+ggplot(red_index_by_image)+
+  # all images
+  geom_point(aes(x = asta_ng, y = redness_index, shape = factor(year)), color = "grey60", alpha = 0.7, size = 1)+
+  # averages and smooth
+  geom_point(aes(x = asta_ng, y = sample_redness, shape = factor(year)), color = "#01665e", size = 2)+
+  #geom_smooth(aes(x = asta_ng, y = sample_redness_log), color = "grey50", size = 0.5, se= F)+
+  geom_smooth(aes(x = asta_ng, y = sample_redness), method = "lm", color = "#01665e", formula = 'y ~ x',size = 0.5, se= F)+
+  # print selected image
+  geom_point(aes(x = asta_ng, y = redness_index, shape = factor(year)), color = "#d94801", size = 1.5, data = sample_to_show)+
+  geom_text_repel(aes(x = asta_ng, y = redness_index, label = image_letter), color = "#d94801", data = sample_to_show, size =6, max.overlaps = 15)+
+  # outliers 
+  geom_point(aes(x = asta_ng, y = sample_redness), shape = "x", color = "green", size = 4, data = outliers_lev_RI_TAC)+
+  geom_point(aes(x = asta_ng, y = sample_redness), shape = "x", color = "blue", size = 4, data = outliers_res_RI_TAC)+
+  #labs etc
+  labs(x= "Total astaxanthin content (TAC) (ng) (log axis)", y ="Redness indices (log axis)")+
+  theme_bw(base_size=10) + 
+  scale_y_continuous(trans = "log")+ 
+  scale_x_continuous(trans = "log")
+```
+</br></br></br>
+
+<style>
+div.blue { background-color:#e6f0ff; border-radius: 5px; padding: 20px;}
+</style>
+<div class = "blue">
+
+- Points with a high leverage belongs to the few samples with really low redness/astaxanthin content. However, we don't have so many reasons to remove them as **they provide an important information, and do not overpass the Cook's distance.** </br>
+- Points with large residuals belongs to the "weird" samples that I identified (grey copepods with broken lipid sacs). Indeed, they are quite extreme, but residuals are still normally distributed. **We could remove them to  only if we have an ecological/methodological reasons of doing so**, which has to be discussed with Emilia. Afterwards, we show that remving them allow to go from 60% to 74% in R-squared. But again, it has to be done only with a strong reason. 
+</div>
+</br>
+
+```{r}
+red_index_by_image2 <- red_index_by_image %>% filter(!(sample_name %in% c("AT_p116", "AT_p117", "AT_p118", "AT_p119", "AT_p120", "AT_p105")))
+red_index_by_sample2 <- red_index_by_sample %>% filter(!(sample_name %in% c("AT_p116", "AT_p117", "AT_p118", "AT_p119", "AT_p120", "AT_p105")))
+```
+
+
+```{r, fig.width=15, fig.height=5}
+a <- ggplot(red_index_by_image2)+
+  # all images
+  geom_point(aes(y = asta_ng,x = redness_index, shape = factor(year)), color = "grey60", alpha = 0.7, size = 1)+
+  # averages and smooth
+  geom_point(aes(y = asta_ng, x = sample_redness, shape = factor(year)), color = "#01665e", size = 2)+
+  #geom_smooth(aes(x = asta_ng, y = sample_redness_log), color = "grey50", size = 0.5, se= F)+
+  geom_smooth(aes(y = asta_ng, x = sample_redness), method = "lm", color = "#01665e", formula = 'y ~ x',size = 0.5, se= F)+
+  # print selected image
+  geom_point(aes(y = asta_ng, x = redness_index, shape = factor(year)), color = "#d94801", size = 1.5, data = sample_to_show)+
+  geom_text_repel(aes(y = asta_ng, x = redness_index, label = image_letter), color = "#d94801", data = sample_to_show, size =4, max.overlaps = 15)+
+  #labs etc
+  labs(y= "Total astaxanthin content (TAC) (ng) (log axis)", x ="Redness indices (log axis)", shape = "Year")+
+  theme_bw(base_size=12) + 
+  scale_y_continuous(trans = "log")+
+  scale_x_continuous(trans = "log")
+
+b<- ggplot(red_index_by_image2)+
+  # all images
+  geom_point(aes(x = asta_ng, y = redness_index, shape = factor(year)), color = "grey60", alpha = 0.7, size = 1)+
+  # averages and smooth
+  geom_point(aes(x = asta_ng, y = sample_redness, shape = factor(year)), color = "#01665e", size = 2)+
+  #geom_smooth(aes(x = asta_ng, y = sample_redness_log), color = "grey50", size = 0.5, se= F)+
+  geom_smooth(aes(x = asta_ng, y = sample_redness), method = "lm", color = "#01665e", formula = 'y ~ x', size = 0.5, se= F)+
+  # print selected image
+  geom_point(aes(x = asta_ng, y = redness_index, shape = factor(year)), color = "#d94801", size = 1.5, data = sample_to_show)+
+  geom_text_repel(aes(x = asta_ng, y = redness_index, label = image_letter), color = "#d94801", data = sample_to_show, size =4, max.overlaps = 15)+
+  labs(x= "Total astaxanthin content (TAC) (ng) (log axis)", y ="Redness indices (log axis)", shape = "Year")+
+  theme_bw(base_size=12) + 
+  scale_y_continuous(trans = "log")+ 
+  scale_x_continuous(trans = "log")
+
+a+b
+```
+
+ln(TAC) = f(ln(RI)) </br> 
+-> p-value < 0.001, **Adjusted R-squared = 0.74**, slope (b) = 0.91, intercept (ln(a)) = -2.64 so a = 0.096 </br>
+ln(RI) = f(ln(TAC)) </br>
+-> p-value < 0.001, **Adjusted R-squared = 0.7405**, slope (b) = 0.81, intercept (ln(a)) = 3.13, so a = 22.8
+```{r, fig.width=10, fig.height=7.5}
+summary(lm(log(asta_ng) ~ log(sample_redness), data = red_index_by_sample2))
+summary(lm(log(sample_redness) ~ log(asta_ng), data = red_index_by_sample2))
+```
+
+
